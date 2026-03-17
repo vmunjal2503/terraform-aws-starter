@@ -18,19 +18,21 @@ And in ~10 minutes, you get:
 Internet
    │
    ▼
-Load Balancer (distributes traffic)
+Load Balancer (ALB, Layer 7, health-checked)
    │
-   ▼
-Server (EC2 with Nginx + Docker pre-installed)
-   │
-   ▼
-Database (PostgreSQL, private, encrypted)
-   │
-   ▼
-File Storage (S3 bucket, versioned, encrypted)
+   ├── Public Subnet (AZ-1) ──▶ EC2 (Nginx + Docker)
+   └── Public Subnet (AZ-2) ──▶ (ready for auto-scaling)
+                                    │
+                                    ▼
+                              Private Subnet
+                              ┌──────────────┐
+                              │ RDS PostgreSQL│ (encrypted, multi-AZ ready)
+                              └──────────────┘
+                                    │
+                              NAT Gateway (outbound-only internet for private subnet)
 ```
 
-All inside a properly configured network (VPC) with public and private subnets, security groups, and IAM roles.
+All inside a properly configured VPC with public and private subnets, security groups, and IAM roles following AWS Well-Architected best practices.
 
 ---
 
@@ -44,15 +46,26 @@ All inside a properly configured network (VPC) with public and private subnets, 
 
 ## What gets created?
 
-| What | Why |
-|------|-----|
-| **VPC + Subnets** | Your own private network — 2 public subnets (for the server and load balancer) + 2 private subnets (for the database) |
-| **EC2 Instance** | A server with Nginx and Docker already installed, ready to deploy your app |
-| **RDS PostgreSQL** | A managed database sitting in a private subnet — only your server can talk to it |
-| **S3 Bucket** | File storage with versioning turned on and encryption enabled |
-| **Load Balancer** | Distributes incoming traffic and checks if your server is healthy |
-| **Security Groups** | Firewall rules — only the right ports are open, nothing else |
-| **IAM Role** | Your server gets permission to read/write to S3, nothing more |
+| What | Why | Technical Details |
+|------|-----|-------------------|
+| **VPC + Subnets** | Your own private network isolated from other AWS accounts | CIDR `10.0.0.0/16`, 2 public + 2 private subnets across 2 AZs for high availability. NAT Gateway in public subnet for outbound traffic from private resources. |
+| **EC2 Instance** | A server with Nginx and Docker already installed | `t3.micro` by default, user-data script bootstraps Docker + Nginx on launch. Placed in public subnet with Elastic IP. |
+| **RDS PostgreSQL** | A managed database in a private subnet — only your server can reach it | Multi-AZ ready, automated backups (7-day retention), encryption at rest via AWS KMS, `db.t3.micro` default. Subnet group spans 2 AZs. |
+| **S3 Bucket** | File storage with versioning and encryption | AES-256 server-side encryption, versioning enabled for rollback, lifecycle rules ready. Bucket policy blocks public access by default. |
+| **Application Load Balancer** | Distributes traffic and health-checks your server | Layer 7 (HTTP/HTTPS), health checks every 30s at `/health`, cross-zone load balancing enabled. Listener rules ready for path-based routing. |
+| **Security Groups** | Firewall rules — principle of least privilege | ALB: 80/443 from `0.0.0.0/0`. EC2: 80/443 from ALB only, 22 from your IP only. RDS: 5432 from EC2 security group only. No wide-open ports. |
+| **IAM Role** | Server gets S3 read/write, nothing else | Instance profile with scoped policy — `s3:GetObject`, `s3:PutObject` on the specific bucket ARN only. No `*` permissions. |
+
+---
+
+## Architecture decisions
+
+- **2 AZs, not 3** — Covers most availability needs while keeping NAT Gateway costs down. Easy to extend to 3 AZs by adding a variable.
+- **Private subnets for RDS** — Database is never exposed to the internet. Connections only accepted from the EC2 security group via security group referencing (not IP-based).
+- **NAT Gateway, not NAT Instance** — Managed, auto-scaling, no single point of failure. More expensive (~$32/mo) but zero maintenance.
+- **Modular structure** — Each resource is a Terraform module. You can reuse `modules/vpc` in another project without touching the rest.
+- **No hardcoded values** — Everything is parameterized via `variables.tf`. Region, instance size, CIDR blocks, tags — all configurable through `terraform.tfvars`.
+- **State file** — Uses local state by default. For teams, switch to S3 backend with DynamoDB locking (commented out in `versions.tf`).
 
 ---
 
@@ -69,7 +82,7 @@ cp terraform.tfvars.example terraform.tfvars
 
 # 3. Deploy
 terraform init      # Download AWS provider
-terraform plan      # Preview what will be created
+terraform plan      # Preview what will be created (review the plan!)
 terraform apply     # Create everything (type 'yes')
 
 # 4. See your outputs
@@ -98,24 +111,25 @@ terraform-aws-starter/
 ├── main.tf                    # Connects all the modules together
 ├── variables.tf               # Configuration options (region, instance size, etc.)
 ├── outputs.tf                 # What you see after deployment (IPs, URLs, endpoints)
+├── versions.tf                # Provider versions + optional S3 backend config
 ├── terraform.tfvars.example   # Sample configuration — copy and fill in
 └── modules/
-    ├── vpc/       # Network: VPC, subnets, NAT gateway, route tables
-    ├── ec2/       # Server: EC2 instance with Nginx + Docker
-    ├── rds/       # Database: PostgreSQL in private subnet
-    ├── s3/        # Storage: Encrypted, versioned S3 bucket
-    ├── alb/       # Load Balancer: Routes traffic to your server
-    └── security/  # Permissions: IAM role for server → S3 access
+    ├── vpc/       # Network: VPC, 4 subnets (2 public + 2 private), NAT, route tables
+    ├── ec2/       # Server: EC2 + user-data bootstrap (Nginx, Docker, CloudWatch agent)
+    ├── rds/       # Database: PostgreSQL, private subnet group, encrypted, automated backups
+    ├── s3/        # Storage: Encrypted bucket, versioning, public access blocked
+    ├── alb/       # Load Balancer: HTTP/HTTPS listeners, target group, health checks
+    └── security/  # Permissions: IAM instance profile, scoped S3 policy, security groups
 ```
 
-Each module is independent. Need just a VPC and database? Remove the modules you don't need.
+Each module is independent — has its own `main.tf`, `variables.tf`, and `outputs.tf`. Need just a VPC and database? Remove the modules you don't need.
 
 ---
 
 ## Who is this for?
 
 - Developers who want to deploy to AWS without clicking through the console
-- Teams that need identical dev/staging/prod environments
+- Teams that need identical dev/staging/prod environments from one codebase
 - Freelancers setting up infrastructure for clients (this is the template I use)
 
 ---
