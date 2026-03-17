@@ -2,6 +2,14 @@
 
 Deploy a complete, secure AWS infrastructure in minutes using Terraform modules.
 
+## Why I Built This
+
+**The Problem:** Every new AWS project starts the same way — manually clicking through the console to create a VPC, subnets, security groups, EC2 instances, and databases. It takes hours, is error-prone, and impossible to replicate consistently across environments. When something breaks at 2 AM, there's no documentation of what was configured or why.
+
+**The Solution:** This project provides a modular, battle-tested Terraform setup that deploys a complete AWS infrastructure in under 10 minutes. Every resource is version-controlled, tagged, documented, and reproducible. Need a staging environment identical to production? Run `terraform apply -var="environment=staging"` — done.
+
+**Built from real-world experience** managing infrastructure at scale as a Staff SRE. These modules follow the same patterns I use for production systems handling millions of requests.
+
 ```
                           ┌─────────────────────────────────────────────┐
                           │              AWS Cloud (us-east-1)          │
