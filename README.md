@@ -1,130 +1,122 @@
-# Terraform AWS Starter — Production-Ready Infrastructure
+# Terraform AWS Starter
 
-Deploy a complete, secure AWS infrastructure in minutes using Terraform modules.
+**One command to deploy a full AWS infrastructure — VPC, servers, database, storage, and load balancer.**
 
-## Why I Built This
+---
 
-**The Problem:** Every new AWS project starts the same way — manually clicking through the console to create a VPC, subnets, security groups, EC2 instances, and databases. It takes hours, is error-prone, and impossible to replicate consistently across environments. When something breaks at 2 AM, there's no documentation of what was configured or why.
+## What is this?
 
-**The Solution:** This project provides a modular, battle-tested Terraform setup that deploys a complete AWS infrastructure in under 10 minutes. Every resource is version-controlled, tagged, documented, and reproducible. Need a staging environment identical to production? Run `terraform apply -var="environment=staging"` — done.
-
-**Built from real-world experience** managing infrastructure at scale as a Staff SRE. These modules follow the same patterns I use for production systems handling millions of requests.
-
-```
-                          ┌─────────────────────────────────────────────┐
-                          │              AWS Cloud (us-east-1)          │
-                          │                                             │
-    ┌──────────┐          │  ┌──────────────────────────────────────┐   │
-    │  Users /  │────────▶│  │     Application Load Balancer (ALB)  │   │
-    │  Internet │         │  └──────────────┬───────────────────────┘   │
-    └──────────┘          │                 │                           │
-                          │  ┌──────────────▼───────────────────────┐   │
-                          │  │         Public Subnets (x2)          │   │
-                          │  │  ┌────────────────────────────────┐  │   │
-                          │  │  │   EC2 Instance (Nginx+Docker)  │  │   │
-                          │  │  │   IAM Role → S3 Access         │  │   │
-                          │  │  └────────────────────────────────┘  │   │
-                          │  └──────────────┬───────────────────────┘   │
-                          │                 │                           │
-                          │  ┌──────────────▼───────────────────────┐   │
-                          │  │        Private Subnets (x2)          │   │
-                          │  │  ┌────────────────────────────────┐  │   │
-                          │  │  │   RDS PostgreSQL (encrypted)   │  │   │
-                          │  │  └────────────────────────────────┘  │   │
-                          │  └─────────────────────────────────────┘    │
-                          │                                             │
-                          │  ┌─────────────────────────────────────┐    │
-                          │  │  S3 Bucket (versioned, encrypted)   │    │
-                          │  └─────────────────────────────────────┘    │
-                          └─────────────────────────────────────────────┘
-```
-
-## What Gets Deployed
-
-| Resource | Details |
-|---|---|
-| **VPC** | Custom VPC with DNS support |
-| **Subnets** | 2 public + 2 private across 2 AZs |
-| **NAT Gateway** | Internet access for private subnets |
-| **EC2** | t3.micro with Nginx + Docker pre-installed |
-| **RDS** | PostgreSQL 15 in private subnet, encrypted |
-| **S3** | Versioned bucket with AES-256 encryption |
-| **ALB** | Application Load Balancer with health checks |
-| **Security Groups** | Least-privilege access rules |
-| **IAM** | EC2 role with scoped S3 access |
-
-## Prerequisites
-
-- [Terraform](https://terraform.io) >= 1.5
-- [AWS CLI](https://aws.amazon.com/cli/) configured with credentials
-- An AWS account with permissions to create the above resources
-
-## Quick Start
+Instead of spending hours clicking around the AWS console to set up your infrastructure, you run one command:
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/yourusername/terraform-aws-starter.git
-cd terraform-aws-starter
-
-# 2. Copy and edit variables
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-
-# 3. Initialize and deploy
-terraform init
-terraform plan          # Review what will be created
-terraform apply         # Type 'yes' to confirm
-
-# 4. Get outputs
-terraform output        # Shows ALB DNS, EC2 IP, RDS endpoint, etc.
+terraform apply
 ```
 
-## Cost Estimate
+And in ~10 minutes, you get:
 
-Running all resources in us-east-1 with defaults:
+```
+Internet
+   │
+   ▼
+Load Balancer (distributes traffic)
+   │
+   ▼
+Server (EC2 with Nginx + Docker pre-installed)
+   │
+   ▼
+Database (PostgreSQL, private, encrypted)
+   │
+   ▼
+File Storage (S3 bucket, versioned, encrypted)
+```
 
-| Resource | Estimated Monthly Cost |
-|---|---|
-| EC2 t3.micro | ~$8.50 |
-| RDS db.t3.micro | ~$14.00 |
-| NAT Gateway | ~$4.50 + data |
-| ALB | ~$16.00 + data |
+All inside a properly configured network (VPC) with public and private subnets, security groups, and IAM roles.
+
+---
+
+## What problem does this solve?
+
+**Without this:** You manually create each AWS resource through the console. It takes hours. You forget what you configured. When you need a second environment (staging), you start from scratch. When something breaks, there's no record of what was set up.
+
+**With this:** Your entire infrastructure is defined in code. It's version-controlled, reproducible, and documented. Need a staging copy? Change one variable. Need to tear it down? Run `terraform destroy`. Everything is clean.
+
+---
+
+## What gets created?
+
+| What | Why |
+|------|-----|
+| **VPC + Subnets** | Your own private network — 2 public subnets (for the server and load balancer) + 2 private subnets (for the database) |
+| **EC2 Instance** | A server with Nginx and Docker already installed, ready to deploy your app |
+| **RDS PostgreSQL** | A managed database sitting in a private subnet — only your server can talk to it |
+| **S3 Bucket** | File storage with versioning turned on and encryption enabled |
+| **Load Balancer** | Distributes incoming traffic and checks if your server is healthy |
+| **Security Groups** | Firewall rules — only the right ports are open, nothing else |
+| **IAM Role** | Your server gets permission to read/write to S3, nothing more |
+
+---
+
+## How to use it
+
+```bash
+# 1. Clone
+git clone https://github.com/vmunjal2503/terraform-aws-starter.git
+cd terraform-aws-starter
+
+# 2. Set your values
+cp terraform.tfvars.example terraform.tfvars
+# Open terraform.tfvars and fill in your project name, region, SSH key, etc.
+
+# 3. Deploy
+terraform init      # Download AWS provider
+terraform plan      # Preview what will be created
+terraform apply     # Create everything (type 'yes')
+
+# 4. See your outputs
+terraform output    # Shows: server IP, database endpoint, S3 bucket name, load balancer URL
+```
+
+## How much does it cost?
+
+| Resource | Monthly Cost |
+|----------|-------------|
+| EC2 (t3.micro) | ~$8.50 |
+| RDS (db.t3.micro) | ~$14.00 |
+| NAT Gateway | ~$4.50 |
+| Load Balancer | ~$16.00 |
 | S3 | ~$0.02 |
 | **Total** | **~$43/month** |
 
-> Use `terraform destroy` to tear everything down when done testing.
+To delete everything and stop charges: `terraform destroy`
 
-## Clean Up
+---
 
-```bash
-terraform destroy       # Type 'yes' to confirm — removes ALL resources
-```
-
-## Module Structure
+## How is the code organized?
 
 ```
 terraform-aws-starter/
-├── main.tf                    # Root module — calls all sub-modules
-├── variables.tf               # Input variables with defaults
-├── outputs.tf                 # Key infrastructure outputs
-├── versions.tf                # Provider and Terraform version constraints
-├── terraform.tfvars.example   # Example variable values
-├── .gitignore
+├── main.tf                    # Connects all the modules together
+├── variables.tf               # Configuration options (region, instance size, etc.)
+├── outputs.tf                 # What you see after deployment (IPs, URLs, endpoints)
+├── terraform.tfvars.example   # Sample configuration — copy and fill in
 └── modules/
-    ├── vpc/                   # VPC, subnets, NAT, IGW, route tables
-    ├── ec2/                   # EC2 instance, security group, user_data
-    ├── rds/                   # RDS PostgreSQL, subnet group, security group
-    ├── s3/                    # S3 bucket, versioning, encryption, lifecycle
-    ├── alb/                   # ALB, target group, listener, security group
-    └── security/              # IAM role, policy, instance profile
+    ├── vpc/       # Network: VPC, subnets, NAT gateway, route tables
+    ├── ec2/       # Server: EC2 instance with Nginx + Docker
+    ├── rds/       # Database: PostgreSQL in private subnet
+    ├── s3/        # Storage: Encrypted, versioned S3 bucket
+    ├── alb/       # Load Balancer: Routes traffic to your server
+    └── security/  # Permissions: IAM role for server → S3 access
 ```
 
-## Customization
+Each module is independent. Need just a VPC and database? Remove the modules you don't need.
 
-- Change instance sizes in `terraform.tfvars`
-- Add more subnets by modifying `modules/vpc`
-- Swap RDS engine by changing `engine` parameter in `modules/rds`
-- Add CloudFront, ElastiCache, or other modules as needed
+---
+
+## Who is this for?
+
+- Developers who want to deploy to AWS without clicking through the console
+- Teams that need identical dev/staging/prod environments
+- Freelancers setting up infrastructure for clients (this is the template I use)
 
 ---
 
